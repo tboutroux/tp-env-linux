@@ -16,7 +16,7 @@ deploiement() {
         ports=${roles[$role]}
         IFS=',' read -ra port_array <<< "$ports"
         for port in "${port_array[@]}"; do
-            add_rule "$role" "$port"
+            ajouter_regle_iptables "$role" "$port"
         done
     done
 }
