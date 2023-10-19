@@ -3,6 +3,7 @@
 declare -A roles=(
     ["web"]="22,80,443"
     ["bdd"]="22,3306"
+)
 
 ajouter_regle_iptables() {
     role=$1
@@ -18,6 +19,7 @@ deploiement() {
         for port in "${port_array[@]}"; do
             ajouter_regle_iptables "$role" "$port"
         done
+        sudo iptables -P INPUT DROP
     done
 }
 
