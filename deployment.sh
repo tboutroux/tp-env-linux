@@ -5,29 +5,28 @@ declare -A roles=(
     ["bdd"]="22,3306"
 )
 
+# Fonction pour ajouter des règles iptables
 ajouter_regle_iptables() {
-    role=$1
-    port=$2
+    ip_address=$1
+    role=$2
     iptables -A INPUT -p tcp --dport $port -j ACCEPT
-    echo " Règle $port ajoutée pour $role"
+    echo "Added rule for $role with IP address: $ip_address"
 }
 
+# Déploiement des règles à partir du fichier CSV
 deploiement() {
-    for role in "${!roles[@]}"; do
-        ports=${roles[$role]}
-        IFS=',' read -ra port_array <<< "$ports"
-        for port in "${port_array[@]}"; do
-            ajouter_regle_iptables "$role" "$port"
-        done
-        sudo iptables -P INPUT DROP
+    tail -n +2 roles.csv | while IFS=',' read -r role ip_address; do
+        ajouter_regle_iptables "$ip_address" "$role"
     done
 }
 
+# Enregistrement des règles iptables
 enregistrement() {
     iptables-save > /etc/iptables/rules.v4
-    echo "Règles iptables enregistrées dans /etc/iptables/rules.v4"
+    echo "Règles iptables enregistrées"
 }
 
 #Execution des fonctions
 deploiement
 enregistrement
+
