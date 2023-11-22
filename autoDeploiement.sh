@@ -28,27 +28,51 @@ function command_ssh {
     done
 }
 
-#Variable WEBPACKAGE contenant les commandes pour installer apache2 et php
-WEBPACKAGE="sudo apt-get install apache2 -y
-    \ && sudo systemctl enable apache2
-    \ && sudo systemctl start apache2
-    \ && sudo systemctl status apache2
-    \ && sudo apt-get install php8.2 php8.2-cli php8.2-common php8.2-imap php8.2-redis php8.2-snmp php8.2-xml php8.2-mysqli php8.2-zip php8.2-mbstring php8.2-curl libapache2-mod-php php-mysql -y
-    \ && php -v"
+WEBPACKAGE="dpkg -s apache2 php8.2 > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        sudo apt-get install apache2 -y &&
+        echo 'apache2 installé' &&
+        sudo systemctl enable apache2 &&
+        sudo systemctl start apache2 &&
+        sudo systemctl --no-pager status apache2
+        echo 'apache2 status' &&
+        sudo apt-get install php8.2 php8.2-cli php8.2-common php8.2-imap php8.2-redis php8.2-snmp php8.2-xml php8.2-mysqli php8.2-zip php8.2-mbstring php8.2-curl libapache2-mod-php php-mysql -y &&
+        echo 'php installé' &&
+        php -v
+    else
+        echo 'apache2 et php8.2 sont déjà installés'
+    fi"
 
-#Variable BDDPACKAGE contenant les commandes pour installer MariaDB
-BDDPACKAGE=" sudo apt-get install mariadb-server -y
-    \ && sudo systemctl enable mariadb && sudo systemctl start mariadb
-    \ && sudo systemctl status mariadb"
+BDDPACKAGE="dpkg -s mariadb-server > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        sudo apt-get install mariadb-server -y &&
+        sudo systemctl enable mariadb &&
+        sudo systemctl start mariadb &&
+        sudo systemctl --no-pager status mariadb
+    else
+        echo 'mariadb-server est déjà installé'
+    fi"
 
-#boucle pour parcourir tout les lignes du fichier csv avec la commande ssh
+DBNAME="test"
+DBUSER="hugo"
+DBPASSWD="epsi"
+
+BDDCONFIG=$(printf "sudo mysql -uroot -e '
+CREATE DATABASE IF NOT EXISTS %s;
+CREATE USER %s@'localhost' IDENTIFIED BY '%s';
+GRANT ALL PRIVILEGES ON %s.* TO %s@'localhost';
+FLUSH PRIVILEGES;'" $DBNAME $DBUSER $DBPASSWD $DBNAME $DBUSER)
+
+CHECKDB=$(printf "sudo mysql -uroot -e 'SHOW DATABASES LIKE \"%s\"'" $DBNAME)
+CHECKUSER=$(printf "sudo mysql -uroot -e 'SELECT User FROM mysql.user WHERE User=\"%s\"'" $DBUSER)
+
+# Boucle pour parcourir toutes les lignes du fichier csv avec la commande ssh
 for i in $(cat $CSV_FILE | cut -d ',' -f 1); do
     if [ $i == "web" ]; then
         command_ssh $i "$WEBPACKAGE"
     elif [ $i == "bdd" ]; then
-        command_ssh $i "$BDDPACKAGE"
+        command_ssh $i "$BDDPACKAGE && $BDDCONFIG && $CHECKDB && $CHECKUSER"
     else
-        "echo $i n'est pas un nom valide"
+        echo "$i n'est pas un nom valide"
     fi
-    
 done
