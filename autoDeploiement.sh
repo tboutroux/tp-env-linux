@@ -28,50 +28,107 @@ function command_ssh {
     done
 }
 
-WEBPACKAGE="dpkg -s apache2 php8.2 > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        sudo apt-get install apache2 -y &&
-        echo 'apache2 installé' &&
+WEBPACKAGE="
+        function is_package_installed {
+            dpkg -s \"\$1\" &> /dev/null
+            if [ \$? -eq 0 ]; then
+                return 0
+            else
+                return 1
+            fi
+        }
+
+        function install_package {
+            if is_package_installed \"\$1\"; then
+                echo \"\$1 est déjà installé\"
+            else
+                sudo apt-get install -y \"\$1\"
+                echo \"\$1 installé\"
+            fi
+        }
+
+        install_package apache2 &&
         sudo systemctl enable apache2 &&
         sudo systemctl start apache2 &&
-        sudo systemctl --no-pager status apache2
+        sudo systemctl --no-pager -l status apache2
         echo 'apache2 status' &&
-        sudo apt-get install php8.2 php8.2-cli php8.2-common php8.2-imap php8.2-redis php8.2-snmp php8.2-xml php8.2-mysqli php8.2-zip php8.2-mbstring php8.2-curl libapache2-mod-php php-mysql -y &&
+        install_package php8.2 php8.2-cli php8.2-common php8.2-imap php8.2-redis php8.2-snmp php8.2-xml php8.2-mysqli php8.2-zip php8.2-mbstring php8.2-curl libapache2-mod-php php-mysql &&
         echo 'php installé' &&
-        php -v
-    else
-        echo 'apache2 et php8.2 sont déjà installés'
-    fi"
+        php -v &&
+        if [ ! -d /var/www/html/wordpress ]; then
+            wget https://wordpress.org/latest.tar.gz &&
+            tar xzvf latest.tar.gz &&
+            sudo mv wordpress /var/www/html/ &&
+            sudo chown -R www-data:www-data /var/www/html/wordpress
+        else
+            echo 'WordPress est déjà installé'
+        fi"
 
-BDDPACKAGE="dpkg -s mariadb-server > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        sudo apt-get install mariadb-server -y &&
+BDDPACKAGE="
+        function is_package_installed {
+            dpkg -s \"\$1\" &> /dev/null
+            if [ \$? -eq 0 ]; then
+                return 0
+            else
+                return 1
+            fi
+        }
+
+        function install_package {
+            if is_package_installed \"\$1\"; then
+                echo \"\$1 est déjà installé\"
+            else
+                sudo apt-get install -y \"\$1\"
+                echo \"\$1 installé\"
+            fi
+        }
+
+        install_package mariadb-server &&
         sudo systemctl enable mariadb &&
         sudo systemctl start mariadb &&
-        sudo systemctl --no-pager status mariadb
-    else
-        echo 'mariadb-server est déjà installé'
-    fi"
+        sudo systemctl --no-pager -l status mariadb &&
+        if [ \$(sudo mysql -uroot -e 'SHOW DATABASES LIKE \"$DBNAME\"' | wc -l) -eq 0 ]; then
+            sudo mysql -uroot -e '
+            CREATE DATABASE IF NOT EXISTS $DBNAME;
+            CREATE USER IF NOT EXISTS $DBUSER@'localhost' IDENTIFIED BY \"$DBPASSWD\";
+            GRANT ALL PRIVILEGES ON $DBNAME.* TO $DBUSER@'localhost';
+            FLUSH PRIVILEGES;'
+        else
+            echo 'La base de données est déjà configurée'
+        fi"
 
+# Commandes pour configurer la base de données
 DBNAME="test"
 DBUSER="hugo"
 DBPASSWD="epsi"
 
 BDDCONFIG=$(printf "sudo mysql -uroot -e '
 CREATE DATABASE IF NOT EXISTS %s;
-CREATE USER %s@'localhost' IDENTIFIED BY '%s';
+CREATE USER %s@'localhost' IDENTIFIED BY \"%s\";
 GRANT ALL PRIVILEGES ON %s.* TO %s@'localhost';
 FLUSH PRIVILEGES;'" $DBNAME $DBUSER $DBPASSWD $DBNAME $DBUSER)
 
 CHECKDB=$(printf "sudo mysql -uroot -e 'SHOW DATABASES LIKE \"%s\"'" $DBNAME)
 CHECKUSER=$(printf "sudo mysql -uroot -e 'SELECT User FROM mysql.user WHERE User=\"%s\"'" $DBUSER)
 
+# Commandes pour vérifier que tout est installé sur la vm web
+CHECKINSTALLWEB="
+        sudo systemctl --no-pager -l status apache2 &&
+        php -v &&
+        ls wordpress"
+
+# Commandes pour vérifier que tout est installé sur la vm bdd
+CHECKINSTALLBDD="
+        sudo systemctl --no-pager -l status mariadb &&
+        $CHECKDB &&
+        $CHECKUSER"
+
 # Boucle pour parcourir toutes les lignes du fichier csv avec la commande ssh
 for i in $(cat $CSV_FILE | cut -d ',' -f 1); do
     if [ $i == "web" ]; then
-        command_ssh $i "$WEBPACKAGE"
+        command_ssh $i "$WEBPACKAGE && $CHECKINSTALLWEB"
     elif [ $i == "bdd" ]; then
-        command_ssh $i "$BDDPACKAGE && $BDDCONFIG && $CHECKDB && $CHECKUSER"
+        command_ssh $i "$BDDPACKAGE && $BDDCONFIG && $CHECKINSTALLBDD"
     else
         echo "$i n'est pas un nom valide"
     fi
